@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ArrayOfMyPing xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <myPing>
+    <Active>true</Active>
+    <Selected>false</Selected>
+    <Value>151</Value>
+    <Name>hello</Name>
+    <Ip>8.9.4.227</Ip>
+    <Country>tunisia</Country>
+  </myPing>
+  <myPing>
+    <Active>true</Active>
+    <Selected>false</Selected>
+    <Value>167</Value>
+    <Ip>66.151.244.170</Ip>
+    <Country>England</Country>
+  </myPing>
+  <myPing>
+    <Active>false</Active>
+    <Selected>false</Selected>
+    <Ip>64.94.101.48</Ip>
+    <Country>England</Country>
+  </myPing>
+</ArrayOfMyPing>

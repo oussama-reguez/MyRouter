@@ -1,0 +1,953 @@
+﻿using myRouter;
+using Squirrel;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
+using System.Xml;
+using System.Xml.Serialization;
+
+namespace WpfApplication4
+{
+    /// <summary>
+    /// Interaction logic for Window1.xaml
+    /// </summary>
+    public partial class MainWindow : Window
+    {
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            IconHelper.RemoveIcon(this);
+        }
+
+        RouterEngine engine;
+        Router router;
+        public Network network;
+        int i = 0;
+        myPing ping;
+        private Boolean adslState;
+        private Boolean lanState;
+        private Boolean internetState;
+        public static string appDirectory= System.IO.Directory.GetParent(System.IO.Directory.GetParent(System.Reflection.Assembly.GetExecutingAssembly().Location).ToString()).ToString();
+       
+
+        public RouterEngine RouterEngine { get { return engine; } }
+        public Router Router { get { return router; } }
+        public Network Network { get { return network; } }
+
+
+        Color green = new Color();
+        Color blue = new Color();
+        Color orange = new Color();
+
+
+        private readonly BackgroundWorker worker = new BackgroundWorker();
+        private readonly BackgroundWorker internetWorker = new BackgroundWorker();
+        private readonly BackgroundWorker pingWorker = new BackgroundWorker();
+        private readonly BackgroundWorker deviceSeeker = new BackgroundWorker();
+        private readonly BackgroundWorker rebootWorker = new BackgroundWorker();
+        private readonly BackgroundWorker animationWorker = new BackgroundWorker();
+
+        System.Windows.Threading.DispatcherTimer internetTimer = new System.Windows.Threading.DispatcherTimer();
+        System.Windows.Threading.DispatcherTimer deviceSeekerTimer = new System.Windows.Threading.DispatcherTimer();
+        System.Windows.Threading.DispatcherTimer routerTimer = new System.Windows.Threading.DispatcherTimer();
+        System.Windows.Threading.DispatcherTimer networkTimer = new System.Windows.Threading.DispatcherTimer();
+        System.Windows.Threading.DispatcherTimer pingTimer = new System.Windows.Threading.DispatcherTimer();
+        System.Windows.Threading.DispatcherTimer updateStatusTimer = new System.Windows.Threading.DispatcherTimer();
+
+        private void networkTimer_Tick(object sender, EventArgs e)
+        {
+            
+
+            network.UpdateNetworkInterface();
+            Console.WriteLine("network" + network.Download);
+
+        }
+      
+
+        private void internetTimer_Tick(object sender, EventArgs e)
+        {
+            // checking for internet 
+           
+            internetWorker.RunWorkerAsync();
+            internetTimer.Stop();
+        }
+
+        private void routerTimer_Tick(object sender, EventArgs e)
+        {
+            Console.WriteLine("updating");
+
+            try
+            {
+                Console.WriteLine("tik tok");
+                engine.updateStatus();
+
+                //  Boolean currentLanState = true;
+
+                if (!lanState)
+                {
+                    changeLanColor(Colors.Green);
+                    lanState = true;
+                }
+                
+                   
+                
+                Boolean currentState = router.checkAdslState();
+                if (currentState != adslState)
+                {
+                    if (currentState) { 
+                        changeAdslColor(Colors.Green);
+                        Boolean internetCurrentState = router.checkInternetStat();
+                        if (internetCurrentState != internetState)
+                        {
+                            if (internetCurrentState)
+                            {
+                                changeInternetColor(Colors.Green);
+                            }
+                            else
+                            {
+                                changeInternetColor(Colors.Red);
+                            }
+                            internetState = internetCurrentState;
+                        }
+                    
+                    }
+                    else
+                    {
+                        // if adsl down we dont need to check for internet 
+                        //    internetTimer.Stop();
+                        changeAdslColor(Colors.Red);
+                        changeInternetColor(Colors.Red);
+                        router.Internet = "0.0.0.0";
+
+                    }
+                    adslState = currentState;
+                }
+               
+
+            }
+
+            catch (WebException ex)
+            {
+
+
+                Console.WriteLine("error error error error ");
+                routerTimer.Stop();
+                //internetTimer.Stop();
+                // pingTimer.Stop();
+                // networkTimer.Stop();
+                router.Status = "connection down";
+                router.DownStream = 0;
+                router.UpStream = 0;
+                router.Modulation = "---";
+                lanState = false;
+                router.Internet = "0.0.0.0";
+                changeLanColor(Colors.Red);
+                changeAdslColor(Colors.Orange);
+                changeInternetColor(Colors.Orange);
+                //internetWorker.CancelAsync();
+                worker.RunWorkerAsync();
+               
+
+            }
+
+           
+
+        }
+        public void updateStatus()
+        {
+            router.checkAdslState();
+            network.checkInternetState();
+        }
+
+        public MainWindow()
+        {
+           
+           
+            deviceSeeker.DoWork += deviceSeeker_DoWork;
+            deviceSeeker.RunWorkerCompleted += deviceSeeker_RunWorkerCompleted;
+
+          
+
+            InitializeComponent();
+            green = Color.FromRgb(0, 184, 0);
+            blue = Color.FromRgb(41, 175, 255);
+            orange = Color.FromRgb(241,183,97);
+
+            router = new Router();
+            router.Status="internet is up";
+            router.Modulation = "g.dmt";
+            router.UpStream = 1024;
+            router.DownStream = 1000;
+            if (!File.Exists(appDirectory + "/router.xml"))
+            {
+                Startup startup = new Startup();
+                startup.Show();
+                this.Close();
+                return;
+            }
+
+            InitializeRouter();
+            /*
+            try { engine.executeRequest("authentication"); }
+            catch (Exception ex)
+            {
+                Startup start = new Startup();
+                start.Show();
+                this.Close();
+            }*/
+        //    initializeNetwork();
+          //  initializePing();
+
+
+            animationWorker.DoWork += animationWorker_DoWork;
+            animationWorker.RunWorkerCompleted += ranimationWorker_RunWorkerCompleted;
+            animationWorker.WorkerReportsProgress = true;
+            animationWorker.ProgressChanged += animationWorker_ProgressChanged;
+           
+            /*
+            
+           
+            deviceSeekerTimer.Tick += new EventHandler(deviceSeekerTimer_Tick);
+            deviceSeekerTimer.Interval = TimeSpan.FromSeconds(10);
+            deviceSeekerTimer.Start();
+       
+           
+              routerTimer.Tick += new EventHandler(routerTimer_Tick);
+              routerTimer.Interval = TimeSpan.FromSeconds(3);
+              routerTimer.Start();
+             */
+            //makeXml();
+            /*
+             
+             routerTimer.Tick += new EventHandler(routerTimer_Tick);
+             routerTimer.Interval = TimeSpan.FromSeconds(3);
+              routerTimer.Start();
+             internetTimer.Tick += new EventHandler(internetTimer_Tick);
+             internetTimer.Interval = TimeSpan.FromSeconds(8);
+            
+             worker.DoWork += worker_DoWork;
+             worker.RunWorkerCompleted += worker_RunWorkerCompleted;
+
+             rebootWorker.DoWork += rebootWorker_DoWork;
+             rebootWorker.RunWorkerCompleted += rebootWorker_RunWorkerCompleted;
+             rebootWorker.WorkerReportsProgress = true;
+             rebootWorker.ProgressChanged += rebootWorker_ProgressChanged;
+
+             internetWorker.DoWork += internetWorker_DoWork;
+             internetWorker.WorkerSupportsCancellation = true;
+             internetWorker.RunWorkerCompleted += internetWorker_RunWorkerCompleted;
+             internetWorker.RunWorkerAsync();
+             //  internetTimer.Start();
+
+             // initializePing();
+
+             */
+            this.DataContext = this;
+
+        }
+        private void animationWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            Thread.Sleep(2000);
+            animationWorker.ReportProgress(5);
+            Thread.Sleep(1000);
+            animationWorker.ReportProgress(10);
+            Thread.Sleep(6000);
+            animationWorker.ReportProgress(20);
+            Thread.Sleep(6000);
+            animationWorker.ReportProgress(30);
+        }
+        private void animationWorker_ProgressChanged(object sender, ProgressChangedEventArgs e)
+        {
+            if (e.ProgressPercentage == 5)
+            {
+                changeLanColor(blue);
+                changeAdslColor(Colors.Orange);
+                changeInternetColor(Colors.Orange);
+                
+            }
+            if (e.ProgressPercentage == 10)
+            {
+                adslStoryBoard = new Storyboard();
+                adslEffect.Color=Colors.Gray;
+                flickAdsl(Colors.Gray,green);
+               
+                changeInternetColor(Colors.Red);
+            }
+            if (e.ProgressPercentage == 20)
+            {
+                 adslStoryBoard = new Storyboard();
+                changeAdslColor(green);
+                internetStoryBoard = new Storyboard();
+                internetEffect.Color = Colors.Gray;
+               // Adsl(Colors.Gray, Colors.Green);
+                flickInternet(Colors.Gray,green);
+            }
+            if (e.ProgressPercentage == 30)
+            {
+                internetStoryBoard = new Storyboard();
+                changeInternetColor(green);
+            }
+        }
+
+        private void ranimationWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            throw new NotImplementedException();
+        }
+
+        
+
+        private void deviceSeekerTimer_Tick(object sender, EventArgs e)
+        {
+            deviceSeekerTimer.Stop();
+            deviceSeeker.RunWorkerAsync();
+        }
+
+        void initializeNetwork()
+        {
+
+            network = new Network();
+            network.initialiseNetworkInterface(router.Ip);
+
+         //   networkTimer.Tick += new EventHandler(networkTimer_Tick);
+           // networkTimer.Interval = TimeSpan.FromSeconds(1);
+         //  network.InternetIp = network.getIp();
+            // network.getAliveHost("192.168.1.1","192.168.1.254");
+            //networkTimer.Start();
+            //deviceSeeker.RunWorkerAsync();
+
+        }
+
+        void initializePing()
+        {
+            network.initilializePingList();
+
+            pingWorker.DoWork += pingWorker_DoWork;
+            pingWorker.RunWorkerCompleted += pingWorker_RunWorkerCompleted;
+            pingWorker.WorkerSupportsCancellation = true;
+            pingTimer.Tick += new EventHandler(pingTimer_Tick);
+            pingTimer.Interval = TimeSpan.FromSeconds(1);
+            pingTimerRunning = true;
+            pingTimer.Start();
+        }
+
+
+        private void deviceSeeker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            Console.WriteLine("started");
+            network.getAliveHost("192.168.1.1", "192.168.1.254");
+        }
+
+        private void deviceSeeker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            Console.WriteLine("done devices" + network.ConnectedDevices);
+            deviceSeekerTimer.Start();
+        }
+
+
+
+        private void worker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            Boolean end = false;
+
+            while (end == false)
+            {
+                Thread.Sleep(8000);
+                end = engine.checkAlive();
+
+                TcpClient TcpScan = new TcpClient();
+
+                try
+
+                {
+
+                    // Try to connect 
+
+                    TcpScan.Connect("192.168.1.1", 80);
+
+                    // If there's no exception, we can say the port is open 
+
+                    Console.WriteLine("Port " + 80 + " open");
+
+                }
+
+                catch
+
+                {
+
+                    // An exception occured, thus the port is probably closed 
+
+                    Console.WriteLine("Port " + "192.168.1.1" + " closed");
+
+                }
+                if (end == true)
+                {
+                    
+                    return;
+                   
+                }
+
+            }
+        }
+
+        private void worker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            changeLanColor(blue);
+            routerTimer_Tick(sender,e);
+            routerTimer.Start();
+          //  networkTimer.Start();
+         //   pingTimer.Start();
+                internetWorker.RunWorkerAsync();
+         //   internetTimer.Start();
+          
+        }
+
+
+        private void rebootWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            Boolean end = false;
+            Boolean pingCheck = false;
+            Boolean aliveCheck = false;
+            Boolean adslCheck = false;
+            Boolean InternetCheck = false;
+            Console.WriteLine("started reboot");
+            Thread.Sleep(8000);
+            Ping ping = new Ping();
+            while (!pingCheck)
+            {
+                PingReply reply;
+                try
+                {
+                    reply = ping.Send("192.168.1.1", 100);
+                    if (reply.Status == IPStatus.Success)
+                    {
+                        pingCheck = true;
+                        Console.WriteLine("ping success");
+                        rebootWorker.ReportProgress(20);
+                    }
+                }
+                catch(System.Net.NetworkInformation.PingException ex)
+                {
+                    pingCheck = false;
+                }
+             
+               
+            }
+
+            while (!aliveCheck)
+            {
+                try
+                {
+                    aliveCheck = engine.checkAlive();
+                }
+
+                catch (Exception ex)
+                {
+                    Console.WriteLine("hllo");
+                    Thread.Sleep(2000);
+                }
+            }
+
+            Console.WriteLine("waiting for adsl and internet");
+            while(!adslCheck || !InternetCheck)
+            {
+                try
+                {
+                    Thread.Sleep(2000);
+                    engine.updateStatus();
+
+                    if (!adslCheck&&router.checkAdslState())
+                    {
+                        rebootWorker.ReportProgress(30);
+                        adslCheck = true;
+                        Console.WriteLine("Adsl is on");
+                    }
+
+                    if (adslCheck)
+                    {
+                        Thread.Sleep(2000);
+                        if (network.checkInternetState())
+                        {
+                            InternetCheck = true;
+                            rebootWorker.ReportProgress(40);
+                            Console.WriteLine("Internet is on");
+                        }
+                    }
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine("sleeping ");
+                    Thread.Sleep(2000);
+                }
+
+            }
+            return;
+          
+
+
+
+
+
+        }
+
+
+       private void rebootWorker_ProgressChanged(object sender, ProgressChangedEventArgs e)
+        {
+            if (e.ProgressPercentage == 20)
+            {
+                changeLanColor(blue);
+                //changeAdslColor(Colors.Orange);
+               // changeInternetColor(Colors.Orange);
+               // flickAdsl(Colors.Green);
+            }
+            if (e.ProgressPercentage == 30)
+            {
+                stopAdslAnimation();
+                changeAdslColor(green);
+             //   flickInternet(Colors.Green);
+            }
+
+            if (e.ProgressPercentage == 40)
+            {
+                stopInternetAnimation();
+                changeInternetColor(green);
+               
+            }
+        }
+        private void rebootWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+
+            Console.WriteLine("done reboot");
+           
+
+        }
+
+        private void internetWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+
+
+
+            Console.WriteLine("internet worker");
+
+           
+                network.checkInternetState();
+
+
+            Console.WriteLine("internet ip " + network.InternetIp);
+              
+            
+                
+              
+
+            
+        }
+
+        private void internetWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            if (network.InternetIp.Equals("0.0.0.0"))
+            {
+             
+                
+                    changeInternetColor(Colors.Red);
+               
+            }
+            else
+            {
+                changeInternetColor(blue);
+            }
+          //  internetTimer.Start();
+            Console.WriteLine("internet worker done");
+        }
+
+        public void makeXml()
+        {
+            Router router = new Router();
+            router.Ip = "192.168.1.5";
+
+            // Create a new XmlSerializer instance with the type of the test class
+            XmlSerializer SerializerObj = new XmlSerializer(typeof(Router));
+
+            // Create a new file stream to write the serialized object to a file
+            TextWriter WriteFileStream = new StreamWriter(@"d:\routerouss.xml");
+            SerializerObj.Serialize(WriteFileStream, router);
+
+            // Cleanup
+            WriteFileStream.Close();
+
+
+        }
+
+        public void InitializeRouter()
+        {
+
+            XmlSerializer SerializerObj = new XmlSerializer(typeof(Router));
+            FileStream ReadFileStream = new FileStream(@appDirectory+"/router.xml", FileMode.Open, FileAccess.Read, FileShare.Read);
+
+            // Load the object saved above by using the Deserialize function
+            router = (Router)SerializerObj.Deserialize(ReadFileStream);
+
+            engine = new RouterEngine(router);
+
+           
+
+
+
+
+            //  engine.updateStatus();
+
+
+
+            // Cleanup
+            ReadFileStream.Close();
+        }
+
+       
+
+        private void pingTimer_Tick(object sender, EventArgs e)
+        {
+            pingWorker.RunWorkerAsync();
+
+        }
+
+        private void updateStatus_Tick(object sender, EventArgs e)
+        {
+            router.checkAdslState();
+            Console.WriteLine("dsfdsfs");
+        }
+        Boolean pingTimerRunning = false;
+        private void pingWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            Console.WriteLine("hello it's me");
+
+            pingTimer.Stop();
+            network.pingHost(i);
+
+
+            //PingHost(pings[i]);
+        }
+
+        private void pingWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            Console.WriteLine("ping worker completed");
+
+            i++;
+            if (i == Network.pings.Count)
+            {
+                i = 0;
+            }
+            if (pingTimerRunning)
+            {
+                Console.WriteLine("ping from main " + network.Ping.Value);
+                pingTimer.Start();
+            }
+            else
+            {
+                pingWorker.CancelAsync();
+            }
+           
+        }
+
+
+
+        Storyboard adslStoryBoard = new Storyboard();
+        Storyboard lanStoryBoard = new Storyboard();
+        Storyboard RouterStoryBoard = new Storyboard();
+        Storyboard internetStoryBoard = new Storyboard();
+        Storyboard textStoryBoard = new Storyboard();
+        private void changeAdslColor(Color color)
+        {
+            if (adslEffect.Color != color)
+            {
+                adslStoryBoard.Children.Clear();
+
+                ColorAnimation ca2 = new ColorAnimation(adslEffect.Color, color, new Duration(TimeSpan.FromMilliseconds(500)));
+                adslStoryBoard.Children.Add(ca2);
+                Storyboard.SetTarget(ca2, imgAdsl);
+                Storyboard.SetTargetProperty(ca2, new PropertyPath("Effect.Color"));
+                adslStoryBoard.Begin();
+            }
+            
+        }
+        private void changeInternetColor(Color color)
+        {
+            if (internetEffect.Color != color)
+            {
+                internetStoryBoard.Children.Clear();
+                ColorAnimation ca2 = new ColorAnimation(internetEffect.Color, color, new Duration(TimeSpan.FromMilliseconds(500)));
+                internetStoryBoard.Children.Add(ca2);
+                Storyboard.SetTarget(ca2, imgInternet);
+                Storyboard.SetTargetProperty(ca2, new PropertyPath("Effect.Color"));
+                internetStoryBoard.Begin();
+            }
+           
+        }
+        private void changeLanColor(Color color)
+        {
+            if (routerEffect.Color != color)
+            {
+                lanStoryBoard.Children.Clear();
+                ColorAnimation ca2 = new ColorAnimation(routerEffect.Color, color, new Duration(TimeSpan.FromMilliseconds(500)));
+                lanStoryBoard.Children.Add(ca2);
+                Storyboard.SetTarget(ca2, imgRouter);
+                Storyboard.SetTargetProperty(ca2, new PropertyPath("Effect.Color"));
+                lanStoryBoard.Begin();
+            }
+            
+        }
+        private void flickAdsl(Color color ,Color color2)
+        {
+            adslStoryBoard.Children.Clear();
+           // Color oldColor = adslEffect.Color;
+            ColorAnimation ca = new ColorAnimation(color, color2, new Duration(TimeSpan.FromMilliseconds(500)));
+            ColorAnimation ca2 = new ColorAnimation(color2, color, new Duration(TimeSpan.FromMilliseconds(500)));
+
+            adslStoryBoard.Children.Add(ca);
+            adslStoryBoard.Children.Add(ca2);
+            ca.BeginTime = TimeSpan.FromMilliseconds(500);
+            ca2.BeginTime = TimeSpan.FromMilliseconds(1500);
+            Storyboard.SetTarget(ca, imgAdsl);
+            Storyboard.SetTargetProperty(ca, new PropertyPath("Effect.Color"));
+            Storyboard.SetTarget(ca2, imgAdsl);
+            Storyboard.SetTargetProperty(ca2, new PropertyPath("Effect.Color"));
+            adslStoryBoard.RepeatBehavior = RepeatBehavior.Forever;
+
+            adslStoryBoard.Begin();
+        }
+        private void flickInternet(Color color,Color color2)
+        {
+            internetStoryBoard.Children.Clear();
+            Color oldColor = internetEffect.Color;
+            ColorAnimation ca = new ColorAnimation(color, color2, new Duration(TimeSpan.FromMilliseconds(500)));
+            ColorAnimation ca2 = new ColorAnimation(color2, color, new Duration(TimeSpan.FromMilliseconds(500)));
+            internetStoryBoard.Children.Add(ca);
+            internetStoryBoard.Children.Add(ca2);
+            ca.BeginTime = TimeSpan.FromMilliseconds(500);
+            ca2.BeginTime = TimeSpan.FromMilliseconds(1500);
+            Storyboard.SetTarget(ca, imgInternet);
+            Storyboard.SetTargetProperty(ca, new PropertyPath("Effect.Color"));
+            Storyboard.SetTarget(ca2, imgInternet);
+            Storyboard.SetTargetProperty(ca2, new PropertyPath("Effect.Color"));
+            internetStoryBoard.RepeatBehavior = RepeatBehavior.Forever;
+
+            internetStoryBoard.Begin();
+
+
+        }
+        private void flickLan(Color color)
+        {
+            lanStoryBoard.Children.Clear();
+            Color oldColor=routerEffect.Color;
+            ColorAnimation ca = new ColorAnimation(oldColor, color, new Duration(TimeSpan.FromMilliseconds(1000)));
+            ColorAnimation ca2 = new ColorAnimation(color, oldColor, new Duration(TimeSpan.FromMilliseconds(1000)));
+            lanStoryBoard.SetValue(Storyboard.TargetNameProperty, "imgRouter");
+            ca.BeginTime = TimeSpan.FromMilliseconds(500);
+            ca2.BeginTime = TimeSpan.FromMilliseconds(1500);
+            Storyboard.SetTarget(ca, imgRouter);
+            Storyboard.SetTargetProperty(ca, new PropertyPath("Effect.Color"));
+            Storyboard.SetTarget(ca2, imgRouter);
+            Storyboard.SetTargetProperty(ca2, new PropertyPath("Effect.Color"));
+
+            lanStoryBoard.RepeatBehavior = RepeatBehavior.Forever;
+            lanStoryBoard.Children.Add(ca);
+            lanStoryBoard.Children.Add(ca2);
+            lanStoryBoard.Begin();
+        }
+        private void stopAdslAnimation()
+        {
+            adslStoryBoard.Stop();
+        }
+        private void stopInternetAnimation()
+        {
+            internetStoryBoard.Stop();
+        }
+        private void stopLanAnimation()
+        {
+            lanStoryBoard.Stop();
+        }
+
+        private void button_Click_2(object sender, RoutedEventArgs e)
+        {
+
+            network.Download = "dsfsf";
+            Console.WriteLine("network" + network.Download);
+            /*
+                        dispatcherTimer.Stop();
+                        engine.executeRequest("reboot");
+                        router.Status = "modem rebooting";
+                        router.Modulation = "---";
+                        router.DownStream = 0;
+                        router.UpStream = 0;
+                        worker.RunWorkerAsync();
+            */
+            Console.WriteLine("network" + network.InterfaceName);
+        }
+        public void method1(int i) {
+            Console.WriteLine(i);
+        }
+        private void continu(Task<UpdateInfo> task)
+        {
+            
+            if (task != null)
+            {
+           
+                
+                update = task.Result;
+                if (update == null)
+                {
+                  
+                }
+                else
+                {
+                    ReleaseEntry futre = update.FutureReleaseEntry;
+                    ReleaseEntry now = update.CurrentlyInstalledVersion;
+
+                    if (now.Filename != futre.Filename)
+                    {
+                        List<ReleaseEntry> list = new List<ReleaseEntry>();
+
+                        list.Add(futre);
+                        Action<int> action = new Action<int>(method1);
+
+
+                        Task.Run(async () =>
+                        {
+
+
+
+                            await mgr.DownloadReleases(list, action).ContinueWith(afterDownload);
+                        }
+
+         );
+                    }
+                   
+                   
+                    //   mgr.DownloadReleases(list);
+                    // Dictionary<ReleaseEntry, string> dic = update.FetchReleaseNotes();
+                    int i = 0;
+
+                  
+                    //mgr.DownloadReleases()
+                }
+                
+            }
+            else
+            {
+                
+            }
+             
+           
+            
+        }
+        private void afterDownload(Task task)
+        {
+            Console.WriteLine("after download");
+            mgr.ApplyReleases(update);
+          //  mgr.
+            Console.WriteLine("done after download");
+        }
+       public static UpdateManager mgr;
+        UpdateInfo update;
+        private void button_Click(object sender, RoutedEventArgs e)
+        {
+
+            changeAdslColor(Colors.Red);
+            changeInternetColor(Colors.Green);
+
+
+
+        }
+
+        
+        private void status(string type)
+        {
+            if (type.Equals("connectionLost"))
+            {
+                router.Status = "connection lost";
+                router.UpStream = 0;
+                router.DownStream = 0;
+                router.Modulation = "---";
+            }
+        }
+
+        private void Button_Click_1(object sender, RoutedEventArgs e)
+        {
+            /*
+            routerTimer.Stop();
+            internetTimer.Stop();
+            internetWorker.CancelAsync();
+          
+           
+            router.Status = "modem rebooting";
+            router.Modulation = "---";
+            router.DownStream = 0;
+            router.UpStream = 0;
+            network.InternetIp = "0.0.0.0";
+            engine.executeRequest("reboot");
+
+            changeAdslColor(Colors.Red);
+            changeInternetColor(Colors.Red);
+            changeLanColor(Colors.Red);
+            rebootWorker.RunWorkerAsync();
+            */
+
+            router.Status = "modem rebooting";
+            router.Modulation = "---";
+            router.DownStream = 0;
+            router.UpStream = 0;
+           router.Internet = "0.0.0.0";
+            //   engine.executeRequest("reboot");
+            adslStoryBoard = new Storyboard();
+            changeAdslColor(Colors.Red);
+          changeInternetColor(Colors.Red);
+            changeLanColor(Colors.Red);
+            animationWorker.RunWorkerAsync();
+        }
+
+        private void openSettings(object sender, RoutedEventArgs e)
+        {
+            PingSettings form = new PingSettings();
+            pingTimer.Stop();
+            pingWorker.CancelAsync();
+            form.Show();
+        }
+
+        private void about_click(object sender, RoutedEventArgs e)
+        {
+            About about = new About();
+            about.Show();
+        }
+
+        private void Window_StateChanged(object sender, EventArgs e)
+        {
+            if ((sender as Window).WindowState == System.Windows.WindowState.Normal)
+            {
+                Console.WriteLine("displyed");
+            }
+        }
+
+        private void Window_ContentRendered(object sender, EventArgs e)
+        {
+            Thread.Sleep(2000);
+            
+            changeInternetColor(green);
+            changeLanColor(blue);
+            changeAdslColor(green);
+           
+        }
+    }
+}

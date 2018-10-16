@@ -1,0 +1,18 @@
+﻿<Window x:Class="myRouter.PingList"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:myRouter"
+        mc:Ignorable="d"
+        Title="PingList" Height="300" Width="300">
+
+
+
+    <StackPanel Orientation="Vertical">
+        <StackPanel Orientation="Vertical"  HorizontalAlignment="Left" >
+            <Label  Content="Authentication"      HorizontalAlignment="Left"  Style="{StaticResource ResourceKey=titleStyle}"/>
+            <Label  Content="Enter username and password"  Margin="0,-15,0,0"  HorizontalAlignment="Center"     Style="{StaticResource ResourceKey=info}" />
+        </StackPanel>
+    </StackPanel>
+</Window>
